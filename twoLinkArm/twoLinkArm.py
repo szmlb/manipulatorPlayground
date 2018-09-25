@@ -1,14 +1,122 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 
 class twoLinkArm:
 
     def __init__(self, genModelFlag):
+
         self.step_time = 0.01
+        self.dof = 2
+
+        # link1
         self.l1 = 0.1
+        self.c1 = self.l1 / 2.0
+        self.m1 = 0.1
+        self.p1x = 0.0
+        self.p1y = 0.0
+        self.p1z = self.m1 * self.c1
+        self.Lxx1 = 0.0
+        self.Lxy1 = 0.0
+        self.Lxz1 = 0.0
+        self.Lyy1 = 0.0
+        self.Lyz1 = 0.0
+        self.Lzz1 = self.m1 * self.l1**2 / 12.0
+
+        # link2
         self.l2 = 0.1
-        self.tcp_x = 0.2
-        self.tcp_z = 0.0
+        self.c2 = self.l2 / 2.0
+        self.m2 = 0.1
+        self.p2x = 0.0
+        self.p2y = 0.0
+        self.p2z = self.m2 * self.c2
+        self.Lxx2 = 0.0
+        self.Lxy2 = 0.0
+        self.Lxz2 = 0.0
+        self.Lyy2 = 0.0
+        self.Lyz2 = 0.0
+        self.Lzz2 = self.m2 * self.l2**2 / 12.0
+
+        self.parms = [self.Lxx1, self.Lxy1, self.Lxz1, self.Lyy1, self.Lyz1, self.Lzz1, self.p1x, self.p1y, self.p1z, self.m1, self.Lxx2, self.Lxy2, self.Lxz2, self.Lyy2, self.Lyz2, self.Lzz2, self.p2x, self.p2y, self.p2z, self.m2]
+
+        # tool center point
+        self.tcp = np.zeros(2)
+
+        # equation of motion
+        self.q = np.zeros(2)
+        self.dq = np.zeros(2)
+        self.ddq = np.zeros(2)
+
+        print(self.parms)
+        self.Meq = np.zeros([self.dof, self.dof])
+        self.ceq = np.zeros([self.dof])
+        self.geq = np.zeros([self.dof])
+
+    def M_matrix(self, parms, q):
+
+        M_out = [0]*4
+
+        x0 = 0.1*math.cos(q[1])
+        x1 = 0.1*math.sin(q[1])
+        x2 = -parms[17]
+        x3 = parms[15] + parms[16]*x0 + x1*x2
+        M_out[0] = parms[5] + x0*(parms[16] + parms[19]*x0) + x1*(parms[19]*x1 + x2) + x3
+        M_out[1] = x3
+        M_out[2] = x3
+        M_out[3] = parms[15]
+
+        M_out = np.array(M_out)
+        self.Meq = M_out.reshape(2, 2)
+
+    def c_vector(self, parms, q, dq):
+
+        c_out = [0]*2
+
+        x0 = -dq[0]**2
+        x1 = math.sin(q[1])
+        x2 = -0.1*x0*x1
+        x3 = math.cos(q[1])
+        x4 = 0.1*x0*x3
+        x5 = parms[16]*x2 - parms[17]*x4
+        x6 = -(dq[0] + dq[1])**2
+
+        c_out[0] = 0.1*x1*(parms[16]*x6 + parms[19]*x4) + 0.1*x3*(parms[17]*x6 + parms[19]*x2) + x5
+        c_out[1] = x5
+
+        self.ceq = np.array(c_out)
+
+    def g_vector(self, parms, q):
+
+        g_out = [0]*2
+
+        x0 = 9.81*math.sin(q[0])
+        x1 = -x0
+        x2 = math.sin(q[1])
+        x3 = 9.81*math.cos(q[0])
+        x4 = math.cos(q[1])
+        x5 = x1*x2 + x3*x4
+        x6 = x0*x4 + x2*x3
+        x7 = parms[16]*x5 - parms[17]*x6
+
+        g_out[0] = 0.1*parms[19]*x2*x6 + 0.1*parms[19]*x4*x5 + parms[6]*x3 + parms[7]*x1 + x7
+        g_out[1] = x7
+
+        self.geq = np.array(g_out)
+
+    def update(self, tau):
+
+        # dynamics
+        self.M_matrix(self.parms, self.q)
+        self.c_vector(self.parms, self.q, self.dq)
+        self.g_vector(self.parms, self.q)
+
+        self.ddq = np.linalg.inv(self.Meq).dot( tau - self.ceq - self.geq  )
+        self.dq = self.dq + self.ddq * self.step_time
+        self.q = self.q + self.dq * self.step_time
+
+        # kinematics
+        self.tcp[0] = self.l1 * np.cos(self.q[0]) + self.l2 * np.cos(self.q[0] + self.q[1])
+        self.tcp[1] = self.l1 * np.sin(self.q[0]) + self.l2 * np.sin(self.q[0] + self.q[1])
 
     def simulation(self, sim_time):
 
@@ -16,20 +124,20 @@ class twoLinkArm:
 
             time = i * self.step_time
 
-            self.theta1 = self.l1 * np.sin(2.0 * np.pi * time)
-            self.theta2 = self.l2 * np.sin(2.0 * np.pi * time)
+            tau = [0.0,  0.0]
+            self.update(tau)
+            self.plot()
 
-            self.tcp_x = self.l1 * np.cos(self.theta1) + self.l2 * np.cos(self.theta1 + self.theta2)
-            self.tcp_z = self.l1 * np.sin(self.theta1) + self.l2 * np.sin(self.theta1 + self.theta2)
+            #self.theta1 = self.l1 * np.sin(2.0 * np.pi * time)
+            #self.theta2 = self.l2 * np.sin(2.0 * np.pi * time)
+            #wrist = self.plot_arm()
 
-            wrist = self.plot_arm()
-
-    def plot_arm(self):
+    def plot(self):
 
         # 各関節の位置
         shoulder = np.array([0, 0])
-        elbow = shoulder + np.array([self.l1 * np.cos(self.theta1), self.l1 * np.sin(self.theta1)])
-        wrist = elbow + np.array([self.l2 * np.cos(self.theta1 + self.theta2), self.l2 * np.sin(self.theta1 + self.theta2)])
+        elbow = shoulder + np.array([self.l1 * np.cos(self.q[0]), self.l1 * np.sin(self.q[0])])
+        wrist = elbow + np.array([self.l2 * np.cos(self.q[0] + self.q[1]), self.l2 * np.sin(self.q[0] + self.q[1])])
 
         # プロット
         plt.cla()
@@ -41,8 +149,8 @@ class twoLinkArm:
         plt.plot(elbow[0], elbow[1], 'ro')       # 関節2の位置
         plt.plot(wrist[0], wrist[1], 'ro')       # 手先の位置
 
-        plt.plot([wrist[0], self.tcp_x], [wrist[1], self.tcp_z], 'g--') # 目標位置との直線
-        plt.plot(self.tcp_x, self.tcp_z, 'g*') # 手先の星印
+        plt.plot([wrist[0], self.tcp[0]], [wrist[1], self.tcp[1]], 'g--') # 目標位置との直線
+        plt.plot(self.tcp[0], self.tcp[1], 'g*') # 手先の星印
 
         plt.xlim(-0.2, 0.2) # xlimit
         plt.ylim(-0.2, 0.2) # ylimit
