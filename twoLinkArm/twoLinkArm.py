@@ -6,38 +6,39 @@ class twoLinkArm:
 
     def __init__(self, genModelFlag):
 
-        self.step_time = 0.01
+        self.step_time = 0.02
         self.dof = 2
 
         # link1
         self.l1 = 0.1
         self.c1 = self.l1 / 2.0
         self.m1 = 0.1
-        self.p1x = 0.0
+        self.p1x = self.m1 * self.c1
         self.p1y = 0.0
-        self.p1z = self.m1 * self.c1
+        self.p1z = 0.0
         self.Lxx1 = 0.0
         self.Lxy1 = 0.0
         self.Lxz1 = 0.0
-        self.Lyy1 = 0.0
+        self.Lyy1 = self.m1 * self.l1**2 / 12.0 + self.m1 * self.c1**2
         self.Lyz1 = 0.0
-        self.Lzz1 = self.m1 * self.l1**2 / 12.0
+        self.Lzz1 = self.m1 * self.l1**2 / 12.0 + self.m1 * self.c1**2
 
         # link2
         self.l2 = 0.1
         self.c2 = self.l2 / 2.0
         self.m2 = 0.1
-        self.p2x = 0.0
+        self.p2x = self.m2 * self.c2
         self.p2y = 0.0
-        self.p2z = self.m2 * self.c2
+        self.p2z = 0.0
         self.Lxx2 = 0.0
         self.Lxy2 = 0.0
         self.Lxz2 = 0.0
-        self.Lyy2 = 0.0
+        self.Lyy2 = self.m2 * self.l2**2 / 12.0 + self.m2 * self.c2**2
         self.Lyz2 = 0.0
-        self.Lzz2 = self.m2 * self.l2**2 / 12.0
+        self.Lzz2 = self.m2 * self.l2**2 / 12.0 + self.m2 * self.c2**2
 
-        self.parms = [self.Lxx1, self.Lxy1, self.Lxz1, self.Lyy1, self.Lyz1, self.Lzz1, self.p1x, self.p1y, self.p1z, self.m1, self.Lxx2, self.Lxy2, self.Lxz2, self.Lyy2, self.Lyz2, self.Lzz2, self.p2x, self.p2y, self.p2z, self.m2]
+        self.parms = [self.Lxx1, self.Lxy1, self.Lxz1, self.Lyy1, self.Lyz1, self.Lzz1, self.p1x, self.p1y, self.p1z, self.m1,
+                      self.Lxx2, self.Lxy2, self.Lxz2, self.Lyy2, self.Lyz2, self.Lzz2, self.p2x, self.p2y, self.p2z, self.m2]
 
         # tool center point
         self.tcp = np.zeros(2)
@@ -47,10 +48,12 @@ class twoLinkArm:
         self.dq = np.zeros(2)
         self.ddq = np.zeros(2)
 
-        print(self.parms)
         self.Meq = np.zeros([self.dof, self.dof])
         self.ceq = np.zeros([self.dof])
         self.geq = np.zeros([self.dof])
+        self.M_matrix(self.parms, self.q)
+        self.c_vector(self.parms, self.q, self.dq)
+        self.g_vector(self.parms, self.q)
 
     def M_matrix(self, parms, q):
 
@@ -127,10 +130,6 @@ class twoLinkArm:
             tau = [0.0,  0.0]
             self.update(tau)
             self.plot()
-
-            #self.theta1 = self.l1 * np.sin(2.0 * np.pi * time)
-            #self.theta2 = self.l2 * np.sin(2.0 * np.pi * time)
-            #wrist = self.plot_arm()
 
     def plot(self):
 
