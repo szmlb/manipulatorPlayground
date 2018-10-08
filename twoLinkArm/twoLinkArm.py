@@ -1,9 +1,3 @@
-#
-# とんちんすきすきプログラム！ON
-#
-# @author tontonkitsune
-#
-
 import matplotlib.pyplot as plt
 import numpy as np
 import math
@@ -37,10 +31,20 @@ class TwoLinkArm:
         plt.ion()
         self.fig = plt.figure()
 
+        # variables
         self.q = np.zeros(self.dof)
         self.dq = np.zeros(self.dof)
         self.ddq = np.zeros(self.dof)
         self.tau = np.zeros(self.dof)
+        self.q_cmd = np.zeros(self.dof)
+        self.dq_cmd = np.zeros(self.dof)
+        self.ddq_cmd = np.zeros(self.dof)
+
+        self.tcp_pos = np.zeros(self.dof) # tool center point
+        self.tcp_pos_cmd = np.zeros(self.dof) # tool center point
+        self.tcp_vel_cmd = np.zeros(self.dof) # tool center point
+
+        self.jaco = np.zeros([self.dof, self.dof])
 
         self.link_params = []
 
@@ -76,9 +80,6 @@ class TwoLinkArm:
         self.link_params[1].Lyz = 0.0
         self.link_params[1].Lzz = self.link_params[1].m * self.link_params[1].l**2 / 12.0 + self.link_params[1].m * self.link_params[1].c**2
         self.link_params[1].jp = np.zeros(self.dof)
-
-        # tool center point
-        self.tcp = np.zeros(self.dof)
 
         # equation of motion
         self.dyn_params = []
@@ -154,12 +155,27 @@ class TwoLinkArm:
 
     def control(self, time):
 
-        qcmd = [0.0,  0.0]
-        qcmd[0] = 0.2 * np.sin(2.0 * np.pi * 1.0 * time)
-        qcmd[1] = -0.6 * np.sin(2.0 * np.pi * 2.0 * time)
+        if time < 1.0:
+            self.q_cmd[0] = 0.0
+            self.q_cmd[1] = np.pi / 2.0
 
-        self.tau[0] = 0.1 * (qcmd[0] - self.q[0]) - 0.005 * self.dq[0] + self.geq[0]
-        self.tau[1] = 0.1 * (qcmd[1] - self.q[1]) - 0.005 * self.dq[1] + self.geq[1]
+            self.tcp_pos_cmd[0] = 0.1
+            self.tcp_pos_cmd[1] = 0.1
+
+        else:
+            self.tcp_pos_cmd[0] = 0.1 + 0.05 * np.sin(2.0 * np.pi * 0.5 * time)
+            self.tcp_pos_cmd[1] = 0.1 + 0.05 * np.cos(2.0 * np.pi * 0.5 * time)
+
+            self.tcp_vel_cmd[0] = 15.0 * (self.tcp_pos_cmd[0] - self.tcp_pos[0])
+            self.tcp_vel_cmd[1] = 15.0 * (self.tcp_pos_cmd[1] - self.tcp_pos[1])
+
+            self.dq_cmd = np.linalg.inv(self.jaco).dot(self.tcp_vel_cmd)
+            self.q_cmd = self.q_cmd + self.dq_cmd * self.step_time
+
+            self.ddq_cmd[0] = 10.0 * (self.q_cmd[0] - self.q[0]) + 1.0 * (self.dq_cmd[0] - self.dq[0])
+            self.ddq_cmd[1] = 10.0 * (self.q_cmd[1] - self.q[1]) + 1.0 * (self.dq_cmd[1] - self.dq[1])
+
+        self.tau = self.Meq.dot(self.ddq_cmd) + self.ceq + self.geq
 
     def update(self):
 
@@ -179,8 +195,13 @@ class TwoLinkArm:
         self.link_params[1].jp[0] = self.link_params[0].jp[0] + self.link_params[0].l * np.cos(self.q[0])
         self.link_params[1].jp[1] = self.link_params[0].jp[1] + self.link_params[0].l * np.sin(self.q[0])
 
-        self.tcp[0] = self.link_params[0].jp[0] + self.link_params[1].jp[0] + self.link_params[1].l * np.cos(self.q[0] + self.q[1])
-        self.tcp[1] = self.link_params[0].jp[1] + self.link_params[1].jp[1] + self.link_params[1].l * np.sin(self.q[0] + self.q[1])
+        self.tcp_pos[0] = self.link_params[0].jp[0] + self.link_params[1].jp[0] + self.link_params[1].l * np.cos(self.q[0] + self.q[1])
+        self.tcp_pos[1] = self.link_params[0].jp[1] + self.link_params[1].jp[1] + self.link_params[1].l * np.sin(self.q[0] + self.q[1])
+
+        self.jaco[0, 0] = -self.link_params[0].l * np.sin(self.q[0]) - self.link_params[1].l * np.sin(self.q[0] + self.q[1])
+        self.jaco[0, 1] = -self.link_params[1].l * np.sin(self.q[0] + self.q[1])
+        self.jaco[1, 0] = self.link_params[0].l * np.cos(self.q[0]) + self.link_params[1].l * np.cos(self.q[0] + self.q[1])
+        self.jaco[1, 1] = self.link_params[1].l * np.cos(self.q[0] + self.q[1])
 
     def simulation(self, sim_time):
 
@@ -198,11 +219,12 @@ class TwoLinkArm:
         plt.cla() # 現在のプロットを削除
 
         plt.plot([self.link_params[0].jp[0], self.link_params[1].jp[0]], [self.link_params[0].jp[1], self.link_params[1].jp[1]], 'k-') # リンク1の直線
-        plt.plot([self.link_params[1].jp[0], self.tcp[0]], [self.link_params[1].jp[1], self.tcp[1]], 'k-') # リンク2の直線
+        plt.plot([self.link_params[1].jp[0], self.tcp_pos[0]], [self.link_params[1].jp[1], self.tcp_pos[1]], 'k-') # リンク2の直線
 
         plt.plot(self.link_params[0].jp[0], self.link_params[0].jp[1], 'ro') # 関節1の位置
         plt.plot(self.link_params[1].jp[0], self.link_params[1].jp[1], 'ro') # 関節2の位置
-        plt.plot(self.tcp[0], self.tcp[1], 'ro') # 手先の位置
+        plt.plot(self.tcp_pos[0], self.tcp_pos[1], 'ro') # 手先の位置
+        plt.plot(self.tcp_pos_cmd[0], self.tcp_pos_cmd[1], 'g*') # 手先の位置
 
         plt.xlim(-0.1, 0.3) # xlimit
         plt.ylim(-0.2, 0.2) # ylimit
