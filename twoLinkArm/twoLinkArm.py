@@ -41,8 +41,9 @@ class TwoLinkArm:
         self.ddq_cmd = np.zeros(self.dof)
 
         self.tcp_pos = np.zeros(self.dof) # tool center point
-        self.tcp_pos_cmd = np.zeros(self.dof) # tool center point
-        self.tcp_vel_cmd = np.zeros(self.dof) # tool center point
+        self.tcp_pos_cmd = np.zeros(self.dof)
+        self.tcp_vel_cmd = np.zeros(self.dof)
+        self.tcp_vel_ref = np.zeros(self.dof)
 
         self.jaco = np.zeros([self.dof, self.dof])
 
@@ -159,21 +160,27 @@ class TwoLinkArm:
             self.q_cmd[0] = 0.0
             self.q_cmd[1] = np.pi / 2.0
 
+            self.dq_cmd[0] = 0.0
+            self.dq_cmd[1] = 0.0
+
             self.tcp_pos_cmd[0] = 0.1
             self.tcp_pos_cmd[1] = 0.1
 
         else:
-            self.tcp_pos_cmd[0] = 0.1 + 0.05 * np.sin(2.0 * np.pi * 0.5 * time)
-            self.tcp_pos_cmd[1] = 0.1 + 0.05 * np.cos(2.0 * np.pi * 0.5 * time)
+            self.tcp_pos_cmd[0] = 0.1 + 0.02 * np.sin(2.0 * np.pi * 0.5 * (time - 1.0))
+            self.tcp_pos_cmd[1] = 0.12 - 0.02 * np.cos(2.0 * np.pi * 0.5 * (time - 1.0))
 
-            self.tcp_vel_cmd[0] = 15.0 * (self.tcp_pos_cmd[0] - self.tcp_pos[0])
-            self.tcp_vel_cmd[1] = 15.0 * (self.tcp_pos_cmd[1] - self.tcp_pos[1])
+            self.tcp_vel_cmd[0] = 2.0 * np.pi * 0.5 * 0.02 * np.cos(2.0 * np.pi * 0.5 * (time - 1.0))
+            self.tcp_vel_cmd[1] = 2.0 * np.pi * 0.5 * 0.02 * np.sin(2.0 * np.pi * 0.5 * (time - 1.0))
+
+            self.tcp_vel_ref[0] = 1.0 * (self.tcp_pos_cmd[0] - self.tcp_pos[0]) + self.tcp_vel_cmd[0]
+            self.tcp_vel_ref[1] = 1.0 * (self.tcp_pos_cmd[1] - self.tcp_pos[1]) + self.tcp_vel_cmd[1]
 
             self.dq_cmd = np.linalg.inv(self.jaco).dot(self.tcp_vel_cmd)
             self.q_cmd = self.q_cmd + self.dq_cmd * self.step_time
 
-            self.ddq_cmd[0] = 10.0 * (self.q_cmd[0] - self.q[0]) + 1.0 * (self.dq_cmd[0] - self.dq[0])
-            self.ddq_cmd[1] = 10.0 * (self.q_cmd[1] - self.q[1]) + 1.0 * (self.dq_cmd[1] - self.dq[1])
+        self.ddq_cmd[0] = 20.0 * (self.q_cmd[0] - self.q[0]) + 8.0 * (self.dq_cmd[0] - self.dq[0])
+        self.ddq_cmd[1] = 20.0 * (self.q_cmd[1] - self.q[1]) + 8.0 * (self.dq_cmd[1] - self.dq[1])
 
         self.tau = self.Meq.dot(self.ddq_cmd) + self.ceq + self.geq
 
