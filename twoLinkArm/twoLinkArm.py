@@ -154,6 +154,21 @@ class TwoLinkArm:
 
         self.geq = np.array(g_out)
 
+    def compute_tcp(self, q):
+        tcp = np.zeros(2)
+        tcp[0] = self.link_params[0].l * np.cos(q[0]) + self.link_params[1].l * np.cos(q[0] + q[1])
+        tcp[1] = self.link_params[0].l * np.sin(q[0]) + self.link_params[1].l * np.sin(q[0] + q[1])
+        return tcp
+
+    def forward_kinematics(self):
+        self.link_params[0].jp[0] = 0.0
+        self.link_params[0].jp[1] = 0.0
+
+        self.link_params[1].jp[0] = self.link_params[0].jp[0] + self.link_params[0].l * np.cos(self.q[0])
+        self.link_params[1].jp[1] = self.link_params[0].jp[1] + self.link_params[0].l * np.sin(self.q[0])
+
+        self.tcp_pos = self.compute_tcp(self.q)
+
     def control(self, time):
 
         if time < 1.0:
@@ -163,24 +178,26 @@ class TwoLinkArm:
             self.dq_cmd[0] = 0.0
             self.dq_cmd[1] = 0.0
 
-            self.tcp_pos_cmd[0] = 0.1
-            self.tcp_pos_cmd[1] = 0.1
+            self.tcp_pos_cmd = self.compute_tcp(self.q_cmd)
 
         else:
-            self.tcp_pos_cmd[0] = 0.1 + 0.02 * np.sin(2.0 * np.pi * 0.5 * (time - 1.0))
-            self.tcp_pos_cmd[1] = 0.12 - 0.02 * np.cos(2.0 * np.pi * 0.5 * (time - 1.0))
 
-            self.tcp_vel_cmd[0] = 2.0 * np.pi * 0.5 * 0.02 * np.cos(2.0 * np.pi * 0.5 * (time - 1.0))
-            self.tcp_vel_cmd[1] = 2.0 * np.pi * 0.5 * 0.02 * np.sin(2.0 * np.pi * 0.5 * (time - 1.0))
+            circle_radius = 0.02
+            circle_freq = 0.5
+            self.tcp_pos_cmd[0] = 0.1 + circle_radius * np.sin(2.0 * np.pi * circle_freq * (time - 1.0))
+            self.tcp_pos_cmd[1] = 0.12 - circle_radius * np.cos(2.0 * np.pi * circle_freq * (time - 1.0))
 
-            self.tcp_vel_ref[0] = 1.0 * (self.tcp_pos_cmd[0] - self.tcp_pos[0]) + self.tcp_vel_cmd[0]
-            self.tcp_vel_ref[1] = 1.0 * (self.tcp_pos_cmd[1] - self.tcp_pos[1]) + self.tcp_vel_cmd[1]
+            self.tcp_vel_cmd[0] = 2.0 * np.pi * circle_freq * circle_radius * np.cos(2.0 * np.pi * circle_freq * (time - 1.0))
+            self.tcp_vel_cmd[1] = 2.0 * np.pi * circle_freq * circle_radius * np.sin(2.0 * np.pi * circle_freq * (time - 1.0))
+
+            self.tcp_vel_ref[0] = 10.0 * (self.tcp_pos_cmd[0] - self.tcp_pos[0]) + self.tcp_vel_cmd[0]
+            self.tcp_vel_ref[1] = 10.0 * (self.tcp_pos_cmd[1] - self.tcp_pos[1]) + self.tcp_vel_cmd[1]
 
             self.dq_cmd = np.linalg.inv(self.jaco).dot(self.tcp_vel_cmd)
             self.q_cmd = self.q_cmd + self.dq_cmd * self.step_time
 
-        self.ddq_cmd[0] = 20.0 * (self.q_cmd[0] - self.q[0]) + 8.0 * (self.dq_cmd[0] - self.dq[0])
-        self.ddq_cmd[1] = 20.0 * (self.q_cmd[1] - self.q[1]) + 8.0 * (self.dq_cmd[1] - self.dq[1])
+        self.ddq_cmd[0] = 30.0 * (self.q_cmd[0] - self.q[0]) + 10.0 * (self.dq_cmd[0] - self.dq[0])
+        self.ddq_cmd[1] = 30.0 * (self.q_cmd[1] - self.q[1]) + 10.0 * (self.dq_cmd[1] - self.dq[1])
 
         self.tau = self.Meq.dot(self.ddq_cmd) + self.ceq + self.geq
 
@@ -196,14 +213,7 @@ class TwoLinkArm:
         self.q = self.q + self.dq * self.step_time
 
         # kinematics
-        self.link_params[0].jp[0] = 0.0
-        self.link_params[0].jp[1] = 0.0
-
-        self.link_params[1].jp[0] = self.link_params[0].jp[0] + self.link_params[0].l * np.cos(self.q[0])
-        self.link_params[1].jp[1] = self.link_params[0].jp[1] + self.link_params[0].l * np.sin(self.q[0])
-
-        self.tcp_pos[0] = self.link_params[0].jp[0] + self.link_params[1].jp[0] + self.link_params[1].l * np.cos(self.q[0] + self.q[1])
-        self.tcp_pos[1] = self.link_params[0].jp[1] + self.link_params[1].jp[1] + self.link_params[1].l * np.sin(self.q[0] + self.q[1])
+        self.forward_kinematics()
 
         self.jaco[0, 0] = -self.link_params[0].l * np.sin(self.q[0]) - self.link_params[1].l * np.sin(self.q[0] + self.q[1])
         self.jaco[0, 1] = -self.link_params[1].l * np.sin(self.q[0] + self.q[1])
